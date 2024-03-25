@@ -1,3 +1,4 @@
+use error::CaptureError;
 use image::RgbaImage;
 use utils::*;
 use x11rb::{
@@ -5,10 +6,12 @@ use x11rb::{
     protocol::xproto::{ConnectionExt, ImageFormat},
 };
 
+pub mod error;
+
 pub mod utils;
 
-fn capture_image() -> RgbaImage {
-    let (conn, _screen_num) = x11rb::connect(None).unwrap();
+fn capture_image() -> Result<RgbaImage, CaptureError> {
+    let (conn, _screen_num) = x11rb::connect(None)?;
 
     let setup = conn.setup();
 
@@ -16,7 +19,7 @@ fn capture_image() -> RgbaImage {
 
     let screen = &setup.roots[(roots_len - 1) as usize];
 
-    let geometry = conn.get_geometry(screen.root).unwrap().reply().unwrap();
+    let geometry = conn.get_geometry(screen.root)?.reply()?;
 
     let scale_factor = 1.0;
 
@@ -34,10 +37,8 @@ fn capture_image() -> RgbaImage {
             width as u16,
             height as u16,
             u32::MAX,
-        )
-        .unwrap()
-        .reply()
-        .unwrap();
+        )?
+        .reply()?;
 
     let depth = get_image.depth;
     let data = get_image.data;
@@ -46,7 +47,9 @@ fn capture_image() -> RgbaImage {
         .pixmap_formats
         .iter()
         .find(|item| item.depth == depth)
-        .unwrap();
+        .ok_or(CaptureError::ImageError(
+            "Failed to find pixmap format".to_string(),
+        ))?;
 
     let bits_per_pixel = pixmap_format.bits_per_pixel as u32;
     let bit_order = setup.bitmap_format_bit_order;
@@ -56,7 +59,7 @@ fn capture_image() -> RgbaImage {
         16 => get_pixel16_rgba,
         24 => get_pixel24_32_rgba,
         32 => get_pixel24_32_rgba,
-        _ => panic!("Unsupported depth: {}", depth),
+        _ => return Err(CaptureError::ImageError("Unsupported depth".to_string())),
     };
 
     let mut rgba = vec![0u8; (width * height * 4) as usize];
@@ -72,10 +75,14 @@ fn capture_image() -> RgbaImage {
         }
     }
 
-    RgbaImage::from_raw(width as u32, height as u32, rgba).unwrap()
+    RgbaImage::from_raw(width as u32, height as u32, rgba).ok_or(CaptureError::ImageError(
+        "Failed to create RgbaImage from raw data".to_string(),
+    ))
 }
 
-fn main() {
-    let image = capture_image();
-    image.save("screenshot.png").unwrap();
+fn main() -> Result<(), CaptureError> {
+    let image = capture_image()?;
+    image.save("screenshot.png")?;
+
+    return Ok(());
 }

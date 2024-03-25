@@ -1165,6 +1165,7 @@ name = "screen_capture"
 version = "0.1.0"
 dependencies = [
  "image",
+ "thiserror",
  "x11rb",
 ]
 
